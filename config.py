@@ -11,5 +11,5 @@ class Config:
     out_file: str = "cleaned.jsonl"
     bad_file: str = "bad_records.jsonl"
 
-    required_fields: tuple[str, ...] = ("user_id", "email", "signup_date")
+    #required_fields: tuple[str, ...] = ("user_id", "email", "signup_date")
 

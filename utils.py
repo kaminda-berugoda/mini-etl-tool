@@ -1,6 +1,6 @@
 import logging
 
-def get_logger(name: str ="mini etl" ) -> logging.Logger:
+def get_logger(name: str ="mini etl",level: int = logging.INFO ) -> logging.Logger:
     logger = logging.getLogger(name) 
 
     if not logger.handlers:

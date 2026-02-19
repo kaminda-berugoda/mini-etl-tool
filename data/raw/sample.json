@@ -1,0 +1,26 @@
+[
+    {
+      "user_id": "123",
+      "name": "John Smith",
+      "email": "john@example.com",
+      "signup_date": "2026-01-10T12:33:00Z",
+      "address": {
+        "city": "Sydney",
+        "country": "AU"
+      },
+      "orders": [
+        {"order_id": "A1", "amount": "120.50"},
+        {"order_id": "A2", "amount": "80.00"}
+      ]
+    },
+    {
+      "user_id": null,
+      "name": "Bad User",
+      "email": "invalid-email",
+      "signup_date": "not-a-date",
+      "orders": [
+        {"order_id": "A3", "amount": "-10"}
+      ]
+    }
+  ]
+  

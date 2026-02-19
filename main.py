@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from config import Config
@@ -31,7 +33,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--out-file", default="cleaned.jsonl", help="Cleaned output filename")
     p.add_argument("--bad-file", default="bad_records.jsonl", help="Bad records output filename")
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+    p.add_argument("--report", default=None, help="Optional path to write a JSON run report (e.g. data/out/run_report.json)")
     return p.parse_args()
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def main() -> None:
@@ -52,6 +59,11 @@ def main() -> None:
     cfg.bad_dir.mkdir(parents=True, exist_ok=True)
 
     stats = RunStats()
+    processed_files: list[str] = []
+    failed_files: list[str] = []
+
+    start_ts = utc_now_iso()
+    t0 = time.perf_counter()
 
     files = sorted(cfg.raw_dir.glob("*.json"))
     stats.files_found = len(files)
@@ -67,8 +79,10 @@ def main() -> None:
             try:
                 records = read_json_array(fp)
                 stats.files_processed += 1
+                processed_files.append(fp.name)
             except Exception as e:
                 stats.files_failed += 1
+                failed_files.append(fp.name)
                 log.error(f"Failed reading {fp.name}: {e}")
                 continue
 
@@ -85,11 +99,40 @@ def main() -> None:
                     bad_f.write(json.dumps(bad_record, ensure_ascii=False) + "\n")
                     stats.records_bad += 1
 
-    log.info(
+    t1 = time.perf_counter()
+    end_ts = utc_now_iso()
+    duration_ms = round((t1 - t0) * 1000, 2)
+
+    summary = (
         "Run Summary | "
         f"files_found={stats.files_found} files_processed={stats.files_processed} files_failed={stats.files_failed} | "
-        f"records_seen={stats.records_seen} records_clean={stats.records_clean} records_bad={stats.records_bad}"
+        f"records_seen={stats.records_seen} records_clean={stats.records_clean} records_bad={stats.records_bad} | "
+        f"duration_ms={duration_ms}"
     )
+    log.info(summary)
+
+    if args.report:
+        report_path = Path(args.report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        report = {
+            "start_time_utc": start_ts,
+            "end_time_utc": end_ts,
+            "duration_ms": duration_ms,
+            "config": {
+                "raw_dir": str(cfg.raw_dir),
+                "out_dir": str(cfg.out_dir),
+                "bad_dir": str(cfg.bad_dir),
+                "out_file": cfg.out_file,
+                "bad_file": cfg.bad_file,
+            },
+            "stats": asdict(stats),
+            "processed_files": processed_files,
+            "failed_files": failed_files,
+        }
+
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        log.info(f"Wrote run report to {report_path}")
 
 
 if __name__ == "__main__":

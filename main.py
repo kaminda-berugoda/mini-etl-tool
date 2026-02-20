@@ -7,9 +7,11 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Any
 
 from config import Config
-from reader import read_json_array
+from reader import read_json_array, read_csv_rows
+from schema_tracker import SchemaTracker
 from transformer import transform_record
 from utils import get_logger
 from validator import validate_record
@@ -26,19 +28,33 @@ class RunStats:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Mini ETL: validate + transform JSON files into JSONL outputs.")
-    p.add_argument("--input", default="data/raw", help="Input directory containing *.json files")
+    p = argparse.ArgumentParser(description="Mini ETL: validate + transform JSON/CSV into JSONL outputs.")
+    p.add_argument("--input", default="data/raw", help="Input directory")
     p.add_argument("--out", default="data/out", help="Output directory for cleaned data")
     p.add_argument("--bad", default="data/bad", help="Output directory for bad records")
     p.add_argument("--out-file", default="cleaned.jsonl", help="Cleaned output filename")
     p.add_argument("--bad-file", default="bad_records.jsonl", help="Bad records output filename")
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-    p.add_argument("--report", default=None, help="Optional path to write a JSON run report (e.g. data/out/run_report.json)")
+    p.add_argument("--report", default=None, help="Optional JSON report path")
+    p.add_argument("--format", default="auto", choices=["auto", "json", "csv"], help="Input format")
+    p.add_argument("--schema-baseline", default=None, help="Optional baseline schema JSON path to diff against")
+    p.add_argument("--schema-out", default=None, help="Optional path to write current observed schema JSON")
     return p.parse_args()
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def pick_reader(fmt: str, fp: Path) -> Callable[[Path], list[dict[str, Any]]]:
+    if fmt == "json":
+        return read_json_array
+    if fmt == "csv":
+        return read_csv_rows
+    # auto
+    if fp.suffix.lower() == ".csv":
+        return read_csv_rows
+    return read_json_array
 
 
 def main() -> None:
@@ -62,22 +78,33 @@ def main() -> None:
     processed_files: list[str] = []
     failed_files: list[str] = []
 
+    schema = SchemaTracker()
+
     start_ts = utc_now_iso()
     t0 = time.perf_counter()
 
-    files = sorted(cfg.raw_dir.glob("*.json"))
+    # Pick files based on format
+    if args.format == "csv":
+        files = sorted(cfg.raw_dir.glob("*.csv"))
+    elif args.format == "json":
+        files = sorted(cfg.raw_dir.glob("*.json"))
+    else:
+        # auto: both
+        files = sorted(list(cfg.raw_dir.glob("*.json")) + list(cfg.raw_dir.glob("*.csv")))
+
     stats.files_found = len(files)
-    log.info(f"Found {stats.files_found} raw files under {cfg.raw_dir}")
+    log.info(f"Found {stats.files_found} raw files under {cfg.raw_dir} (format={args.format})")
 
     out_path = cfg.out_dir / cfg.out_file
     bad_path = cfg.bad_dir / cfg.bad_file
 
     with out_path.open("w", encoding="utf-8") as clean_f, bad_path.open("w", encoding="utf-8") as bad_f:
         for fp in files:
+            reader = pick_reader(args.format, fp)
             log.info(f"Processing {fp.name}")
 
             try:
-                records = read_json_array(fp)
+                records = reader(fp)
                 stats.files_processed += 1
                 processed_files.append(fp.name)
             except Exception as e:
@@ -88,6 +115,11 @@ def main() -> None:
 
             for rec in records:
                 stats.records_seen += 1
+
+                # observe schema on RAW record (pre-transform)
+                if isinstance(rec, dict):
+                    schema.observe(rec, source_file=fp.name)
+
                 result = validate_record(rec)
 
                 if result.is_valid:
@@ -99,17 +131,28 @@ def main() -> None:
                     bad_f.write(json.dumps(bad_record, ensure_ascii=False) + "\n")
                     stats.records_bad += 1
 
-    t1 = time.perf_counter()
+    duration_ms = round((time.perf_counter() - t0) * 1000, 2)
     end_ts = utc_now_iso()
-    duration_ms = round((t1 - t0) * 1000, 2)
 
-    summary = (
+    # schema snapshot + optional baseline diff
+    current_schema = schema.snapshot()
+    schema_diff = None
+    if args.schema_baseline:
+        baseline_path = Path(args.schema_baseline)
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        schema_diff = SchemaTracker.diff(baseline=baseline, current=current_schema)
+
+    if args.schema_out:
+        Path(args.schema_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.schema_out).write_text(json.dumps(current_schema, indent=2), encoding="utf-8")
+        log.info(f"Wrote current schema snapshot to {args.schema_out}")
+
+    log.info(
         "Run Summary | "
         f"files_found={stats.files_found} files_processed={stats.files_processed} files_failed={stats.files_failed} | "
         f"records_seen={stats.records_seen} records_clean={stats.records_clean} records_bad={stats.records_bad} | "
         f"duration_ms={duration_ms}"
     )
-    log.info(summary)
 
     if args.report:
         report_path = Path(args.report)
@@ -125,10 +168,16 @@ def main() -> None:
                 "bad_dir": str(cfg.bad_dir),
                 "out_file": cfg.out_file,
                 "bad_file": cfg.bad_file,
+                "format": args.format,
             },
             "stats": asdict(stats),
             "processed_files": processed_files,
             "failed_files": failed_files,
+            "schema": {
+                "current": current_schema,
+                "baseline_path": args.schema_baseline,
+                "diff": schema_diff,
+            },
         }
 
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

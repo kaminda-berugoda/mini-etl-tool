@@ -1,0 +1,18 @@
+{
+    "schema_name": "wealth",
+    "version": 1,
+  
+    "required_fields": ["client_id", "primary_email", "created_at"],
+  
+    "field_map": {
+      "client_id": "user_id",
+      "full_name": "name",
+      "primary_email": "email",
+      "created_at": "signup_date",
+      "location.city": "city",
+      "location.country": "country"
+    },
+  
+    "orders_path": "transactions",
+    "order_amount_path": "value"
+  }

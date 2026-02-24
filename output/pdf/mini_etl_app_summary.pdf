@@ -1,0 +1,64 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 3311 >>
+stream
+BT /F1 16 Tf 1 0 0 1 42 758 Tm (Mini ETL Framework - One-Page App Summary) Tj ET
+0.82 0.85 0.89 RG 1 w 42 744 m 570 744 l S
+BT /F1 12 Tf 1 0 0 1 42 735 Tm (What it is) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 721 Tm (- A lightweight Python ETL app that ingests JSON/CSV files, maps source schemas to one canonical) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 709 Tm (  model, validates records, and writes JSONL outputs.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 697 Tm (- The pipeline is modular and CLI-driven so local runs are reproducible and observable.) Tj ET
+BT /F1 12 Tf 1 0 0 1 42 680 Tm (Who it's for) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 666 Tm (- Primary persona: Not found in repo.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 654 Tm (- Likely audience from README context: data engineers or learners practicing modular ETL design.) Tj ET
+BT /F1 12 Tf 1 0 0 1 42 637 Tm (What it does) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 623 Tm (- Auto-detects input format \(`--format auto`\) or enforces JSON/CSV mode.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 611 Tm (- Loads schema definitions from `schemas/*.json` and resolves schema by filename prefix or fixed) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 599 Tm (  schema.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 587 Tm (- Maps source fields to canonical keys using schema `field_map` definitions.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 575 Tm (- Normalizes signup dates and computes `total_order_value` plus `order_count`.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 563 Tm (- Validates canonical records and quarantines failures with detailed errors.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 551 Tm (- Streams clean and bad outputs to separate JSONL files.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 539 Tm (- Optionally writes a run report with timing, config, and file/record stats.) Tj ET
+BT /F1 12 Tf 1 0 0 1 42 522 Tm (How it works \(repo-evidence architecture\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 508 Tm (- `main.py` orchestrates args, file discovery, schema selection, transform, validation, and) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 496 Tm (  output/report writes.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 484 Tm (- `reader.py` reads JSON arrays and CSV rows into dict records.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 472 Tm (- `schema_registry.py` loads `SchemaDef` metadata and supports nested-path lookups.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 460 Tm (- `transformer_schema.py` applies field mapping and aggregate calculations into canonical output.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 448 Tm (- `validator.py` defines reusable validators; `main.py` runs canonical checks in the live flow.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 436 Tm (- Data flow: `data/raw/*` -> reader -> schema map/transform -> canonical validation ->) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 424 Tm (  `data/out/cleaned.jsonl` and `data/bad/bad_records.jsonl`.) Tj ET
+BT /F1 12 Tf 1 0 0 1 42 407 Tm (How to run \(minimal getting started\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 393 Tm (- Prerequisite: Python 3.8+ \(README states no external runtime dependencies\).) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 381 Tm (- From repo root: `python main.py`.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 369 Tm (- Optional: `python main.py --format auto --schema-mode filename --report data/out/run_report.json`.) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 357 Tm (- Defaults: input=`data/raw`, clean output=`data/out/cleaned.jsonl`, bad) Tj ET
+BT /F1 10 Tf 1 0 0 1 42 345 Tm (  output=`data/bad/bad_records.jsonl`.) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+3673
+%%EOF

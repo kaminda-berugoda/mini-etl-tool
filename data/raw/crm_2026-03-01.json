@@ -1,0 +1,30 @@
+[
+    {
+      "user_id": "C1001",
+      "name": "John Smith",
+      "email": "john.smith@example.com",
+      "signup_date": "2026-03-01T10:15:00Z",
+      "address": {
+        "city": "Sydney",
+        "country": "AU"
+      },
+      "orders": [
+        {"order_id": "O1", "amount": "150.50"},
+        {"order_id": "O2", "amount": "99.99"}
+      ],
+      "marketing_opt_in": true
+    },
+    {
+      "user_id": "C1002",
+      "name": "Bad Email User",
+      "email": "not-an-email",
+      "signup_date": "2026-03-01T11:00:00Z",
+      "address": {
+        "city": "Melbourne",
+        "country": "AU"
+      },
+      "orders": [
+        {"order_id": "O3", "amount": "-20"}
+      ]
+    }
+  ]

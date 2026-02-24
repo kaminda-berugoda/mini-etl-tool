@@ -1,0 +1,20 @@
+[
+    {
+      "user_id": "C1003",
+      "name": "Emily Wong",
+      "email": "emily.wong@example.com",
+      "signup_date": "2026-03-02T09:45:00Z",
+      "address": {
+        "city": "Brisbane",
+        "country": "AU"
+      },
+      "orders": [],
+      "loyalty_tier": "GOLD"
+    },
+    {
+      "user_id": "",
+      "name": "Missing ID",
+      "email": "missing@example.com",
+      "signup_date": "not-a-date"
+    }
+  ]

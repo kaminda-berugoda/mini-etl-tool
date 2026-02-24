@@ -1,0 +1,26 @@
+[
+    {
+      "client_id": "W2001",
+      "full_name": "Sarah Connor",
+      "primary_email": "sarah.connor@wealth.com",
+      "created_at": "2026-03-01T08:30:00Z",
+      "location": {
+        "city": "Perth",
+        "country": "AU"
+      },
+      "transactions": [
+        {"txn_id": "T1", "value": "1000.00"},
+        {"txn_id": "T2", "value": "250.50"}
+      ],
+      "advisor_code": "ADV123"
+    },
+    {
+      "client_id": "W2002",
+      "full_name": "Invalid Wealth User",
+      "primary_email": "invalid-email",
+      "created_at": "bad-date",
+      "transactions": [
+        {"txn_id": "T3", "value": "abc"}
+      ]
+    }
+  ]

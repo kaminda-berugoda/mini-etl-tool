@@ -1,0 +1,18 @@
+{
+    "schema_name": "crm",
+    "version": 1,
+  
+    "required_fields": ["user_id", "email", "signup_date"],
+  
+    "field_map": {
+      "user_id": "user_id",
+      "name": "name",
+      "email": "email",
+      "signup_date": "signup_date",
+      "address.city": "city",
+      "address.country": "country"
+    },
+  
+    "orders_path": "orders",
+    "order_amount_path": "amount"
+  }

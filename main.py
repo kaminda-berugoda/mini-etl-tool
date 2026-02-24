@@ -7,16 +7,19 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Any
+from typing import Any, Callable
 
 from config import Config
 from reader import read_json_array, read_csv_rows
-from schema_tracker import SchemaTracker
-from transformer import transform_record
+from schema_registry import SchemaRegistry, SchemaDef
+from transformer_schema import transform_with_schema
 from utils import get_logger
-from validator import validate_record
+from validator import ValidationResult  # keep your existing dataclass
 
 
+# ----------------------------
+# Metrics
+# ----------------------------
 @dataclass
 class RunStats:
     files_found: int = 0
@@ -27,18 +30,30 @@ class RunStats:
     records_bad: int = 0
 
 
+# ----------------------------
+# CLI
+# ----------------------------
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Mini ETL: validate + transform JSON/CSV into JSONL outputs.")
+    p = argparse.ArgumentParser(description="Mini ETL: multi-schema ingestion (JSON/CSV) -> JSONL outputs.")
+
     p.add_argument("--input", default="data/raw", help="Input directory")
     p.add_argument("--out", default="data/out", help="Output directory for cleaned data")
     p.add_argument("--bad", default="data/bad", help="Output directory for bad records")
     p.add_argument("--out-file", default="cleaned.jsonl", help="Cleaned output filename")
     p.add_argument("--bad-file", default="bad_records.jsonl", help="Bad records output filename")
-    p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-    p.add_argument("--report", default=None, help="Optional JSON report path")
+
     p.add_argument("--format", default="auto", choices=["auto", "json", "csv"], help="Input format")
-    p.add_argument("--schema-baseline", default=None, help="Optional baseline schema JSON path to diff against")
-    p.add_argument("--schema-out", default=None, help="Optional path to write current observed schema JSON")
+    p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+
+    p.add_argument("--report", default=None, help="Optional JSON report path")
+
+    # ---- multi-schema settings
+    p.add_argument("--schemas-dir", default="schemas", help="Directory containing schema JSON files")
+    p.add_argument("--schema-mode", default="filename", choices=["filename", "fixed"],
+                   help="How to choose schema: filename prefix or fixed schema for all files")
+    p.add_argument("--schema-name", default=None,
+                   help="Schema name when using --schema-mode fixed (e.g. crm)")
+
     return p.parse_args()
 
 
@@ -46,6 +61,9 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ----------------------------
+# Helpers
+# ----------------------------
 def pick_reader(fmt: str, fp: Path) -> Callable[[Path], list[dict[str, Any]]]:
     if fmt == "json":
         return read_json_array
@@ -57,6 +75,64 @@ def pick_reader(fmt: str, fp: Path) -> Callable[[Path], list[dict[str, Any]]]:
     return read_json_array
 
 
+def list_input_files(raw_dir: Path, fmt: str) -> list[Path]:
+    if fmt == "json":
+        return sorted(raw_dir.glob("*.json"))
+    if fmt == "csv":
+        return sorted(raw_dir.glob("*.csv"))
+    return sorted(list(raw_dir.glob("*.json")) + list(raw_dir.glob("*.csv")))
+
+
+def schema_for_file(fp: Path, mode: str, fixed_name: str | None, registry: SchemaRegistry) -> SchemaDef:
+    if mode == "fixed":
+        if not fixed_name:
+            raise ValueError("schema-mode fixed requires --schema-name")
+        return registry.get(fixed_name)
+
+    # filename mode: prefix before first underscore, else full stem
+    # e.g. crm_2026-02-23.json -> crm
+    prefix = fp.name.split("_", 1)[0]
+    return registry.get(prefix)
+
+
+def validate_canonical_record(canon: dict[str, Any]) -> ValidationResult:
+    """
+    Canonical-level validation (simple & consistent across schemas).
+    You can move this into validator.py if you prefer.
+    """
+    errors: list[str] = []
+
+    user_id = canon.get("user_id")
+    if user_id is None or (isinstance(user_id, str) and user_id.strip() == ""):
+        errors.append("missing user_id")
+
+    email = canon.get("email")
+    if email is None or "@" not in str(email):
+        errors.append("invalid email")
+
+    signup_date = canon.get("signup_date")
+    try:
+        if signup_date is None:
+            raise ValueError("missing signup_date")
+        # canonical signup_date should be YYYY-MM-DD after transform
+        datetime.fromisoformat(str(signup_date))
+    except Exception:
+        errors.append("invalid signup_date")
+
+    # totals are optional; if present ensure numeric
+    tov = canon.get("total_order_value")
+    if tov is not None:
+        try:
+            float(tov)
+        except Exception:
+            errors.append("total_order_value not numeric")
+
+    return ValidationResult(is_valid=(len(errors) == 0), errors=errors)
+
+
+# ----------------------------
+# Main
+# ----------------------------
 def main() -> None:
     args = parse_args()
 
@@ -74,24 +150,18 @@ def main() -> None:
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     cfg.bad_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load schema registry
+    registry = SchemaRegistry(Path(args.schemas_dir))
+    registry.load_all()
+
     stats = RunStats()
     processed_files: list[str] = []
     failed_files: list[str] = []
 
-    schema = SchemaTracker()
-
     start_ts = utc_now_iso()
     t0 = time.perf_counter()
 
-    # Pick files based on format
-    if args.format == "csv":
-        files = sorted(cfg.raw_dir.glob("*.csv"))
-    elif args.format == "json":
-        files = sorted(cfg.raw_dir.glob("*.json"))
-    else:
-        # auto: both
-        files = sorted(list(cfg.raw_dir.glob("*.json")) + list(cfg.raw_dir.glob("*.csv")))
-
+    files = list_input_files(cfg.raw_dir, args.format)
     stats.files_found = len(files)
     log.info(f"Found {stats.files_found} raw files under {cfg.raw_dir} (format={args.format})")
 
@@ -101,7 +171,16 @@ def main() -> None:
     with out_path.open("w", encoding="utf-8") as clean_f, bad_path.open("w", encoding="utf-8") as bad_f:
         for fp in files:
             reader = pick_reader(args.format, fp)
-            log.info(f"Processing {fp.name}")
+
+            try:
+                schema = schema_for_file(fp, args.schema_mode, args.schema_name, registry)
+            except Exception as e:
+                stats.files_failed += 1
+                failed_files.append(fp.name)
+                log.error(f"Schema resolution failed for {fp.name}: {e}")
+                continue
+
+            log.info(f"Processing {fp.name} (schema={schema.schema_name} v{schema.version})")
 
             try:
                 records = reader(fp)
@@ -116,36 +195,38 @@ def main() -> None:
             for rec in records:
                 stats.records_seen += 1
 
-                # observe schema on RAW record (pre-transform)
-                if isinstance(rec, dict):
-                    schema.observe(rec, source_file=fp.name)
-
-                result = validate_record(rec)
-
-                if result.is_valid:
-                    transformed = transform_record(rec)
-                    clean_f.write(json.dumps(transformed, ensure_ascii=False) + "\n")
-                    stats.records_clean += 1
-                else:
-                    bad_record = {"source_file": fp.name, "errors": result.errors, "record": rec}
-                    bad_f.write(json.dumps(bad_record, ensure_ascii=False) + "\n")
+                # Defensive: readers should return dict rows
+                if not isinstance(rec, dict):
                     stats.records_bad += 1
+                    bad_f.write(json.dumps({
+                        "source_file": fp.name,
+                        "schema": schema.schema_name,
+                        "errors": ["record is not an object/dict"],
+                        "record": rec,
+                    }, ensure_ascii=False) + "\n")
+                    continue
+
+                # Transform to canonical using schema mapping
+                canon = transform_with_schema(rec, schema)
+
+                # Validate canonical consistently across all schemas
+                v = validate_canonical_record(canon)
+
+                if v.is_valid:
+                    stats.records_clean += 1
+                    clean_f.write(json.dumps(canon, ensure_ascii=False) + "\n")
+                else:
+                    stats.records_bad += 1
+                    bad_f.write(json.dumps({
+                        "source_file": fp.name,
+                        "schema": schema.schema_name,
+                        "errors": v.errors,
+                        "record": rec,
+                        "canonical_preview": canon,  # super useful for debugging mappings
+                    }, ensure_ascii=False) + "\n")
 
     duration_ms = round((time.perf_counter() - t0) * 1000, 2)
     end_ts = utc_now_iso()
-
-    # schema snapshot + optional baseline diff
-    current_schema = schema.snapshot()
-    schema_diff = None
-    if args.schema_baseline:
-        baseline_path = Path(args.schema_baseline)
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        schema_diff = SchemaTracker.diff(baseline=baseline, current=current_schema)
-
-    if args.schema_out:
-        Path(args.schema_out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.schema_out).write_text(json.dumps(current_schema, indent=2), encoding="utf-8")
-        log.info(f"Wrote current schema snapshot to {args.schema_out}")
 
     log.info(
         "Run Summary | "
@@ -169,15 +250,13 @@ def main() -> None:
                 "out_file": cfg.out_file,
                 "bad_file": cfg.bad_file,
                 "format": args.format,
+                "schemas_dir": args.schemas_dir,
+                "schema_mode": args.schema_mode,
+                "schema_name": args.schema_name,
             },
             "stats": asdict(stats),
             "processed_files": processed_files,
             "failed_files": failed_files,
-            "schema": {
-                "current": current_schema,
-                "baseline_path": args.schema_baseline,
-                "diff": schema_diff,
-            },
         }
 
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
